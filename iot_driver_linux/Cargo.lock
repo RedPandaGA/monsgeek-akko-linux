@@ -1772,6 +1772,7 @@ dependencies = [
  "cpal",
  "crossterm 0.28.1",
  "ctrlc",
+ "dirs",
  "futures",
  "gif",
  "hidapi",

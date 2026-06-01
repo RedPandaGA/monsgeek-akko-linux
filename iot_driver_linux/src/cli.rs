@@ -412,22 +412,24 @@ pub enum Commands {
     // === Audio Commands ===
     /// Run audio reactive LED mode
     Audio {
-        /// Color mode: spectrum, solid, gradient
-        #[arg(value_enum, short, long, default_value = "spectrum")]
-        mode: AudioMode,
-        /// Base hue for solid mode (0-360)
-        #[arg(long, default_value = "0")]
-        hue: f32,
-        /// Sensitivity multiplier (0.5-2.0)
-        #[arg(long, default_value = "1.0")]
-        sensitivity: f32,
+        /// Audio source device (overrides config file value)
+        #[arg(long)]
+        source: Option<String>,
     },
 
-    /// Test audio capture (list devices)
-    AudioTest,
+    /// Test audio capture - list devices with names usable as --source
+    AudioTest {
+        /// List all available source devices and exit
+        #[arg(long)]
+        list: bool,
+    },
 
     /// Show real-time audio levels
-    AudioLevels,
+    AudioLevels {
+        /// Audio source device name (use audio-test --list to see options)
+        #[arg(long)]
+        source: Option<String>,
+    },
 
     // === Screen Color Commands ===
     /// Run screen color reactive LED mode (streams average screen color to keyboard)

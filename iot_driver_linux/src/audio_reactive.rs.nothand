@@ -17,7 +17,7 @@ use crate::notify::keymap::MATRIX_LEN;
 const NUM_BANDS: usize = 8;
 
 /// FFT sample size (must be power of 2)
-const FFT_SIZE: usize = 2048;
+const FFT_SIZE: usize = 512;
 
 /// Matrix dimensions
 const COLS: usize = 16;
@@ -50,56 +50,6 @@ impl Default for BandSmoothing {
         Self {
             // Bass: fast (low smoothing), treble: slower (higher smoothing)
             values: [0.05, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.3],
-        }
-    }
-}
-
-/// A named frequency band set (low, high, weight) for each of the 8 bands
-#[derive(Clone, Debug)]
-pub struct FrequencySet {
-    pub name: String,
-    /// (low_hz, high_hz, weight) for each band
-    pub bands: [(f32, f32, f32); NUM_BANDS],
-}
-
-impl FrequencySet {
-    pub fn default_set() -> Self {
-        Self {
-            name: "default".to_string(),
-            bands: [
-                (20.0,    100.0,   2.5),
-                (60.0,    150.0,   1.5),
-                (150.0,   400.0,   1.2),
-                (400.0,   1000.0,  1.0),
-                (1000.0,  2500.0,  1.0),
-                (2500.0,  6000.0,  1.2),
-                (6000.0,  12000.0, 1.5),
-                (12000.0, 20000.0, 2.0),
-            ],
-        }
-    }
-
-    pub fn drums_set() -> Self {
-        Self {
-            name: "drums".to_string(),
-            bands: [
-                // Kick drum body: 50-100Hz
-                (50.0,   100.0,  3.0),
-                // Kick attack + bass guitar: 100-200Hz
-                (100.0,  200.0,  2.0),
-                // Snare body + low toms: 200-400Hz
-                (200.0,  400.0,  1.5),
-                // Snare crack + upper toms: 400-800Hz
-                (400.0,  800.0,  1.5),
-                // Hi-hat closed + rimshot: 800-3000Hz
-                (800.0,  3000.0, 1.2),
-                // Hi-hat open + cymbals body: 3000-7000Hz
-                (3000.0, 7000.0, 1.3),
-                // Cymbal shimmer: 7000-12000Hz
-                (7000.0, 12000.0, 1.8),
-                // Cymbal air + room: 12000-20000Hz
-                (12000.0, 20000.0, 2.5),
-            ],
         }
     }
 }
@@ -157,10 +107,6 @@ pub struct AudioConfig {
     pub band_sensitivity: BandSensitivity,
     /// Per-band smoothing
     pub band_smoothing: BandSmoothing,
-    /// Active frequency set name
-    pub freq_set: String,
-    /// Named frequency sets
-    pub freq_sets: Vec<FrequencySet>,
     /// Active layout name
     pub layout: String,
     /// Named column layouts
@@ -209,11 +155,6 @@ impl Default for AudioConfig {
             fps: 20,
             band_sensitivity: BandSensitivity::default(),
             band_smoothing: BandSmoothing::default(),
-            freq_set: "default".to_string(),
-            freq_sets: vec![
-                FrequencySet::default_set(),
-                FrequencySet::drums_set(),
-            ],
             layout: "default".to_string(),
             layouts: vec![
                 ("default".to_string(),   [0, 0, 0, 1, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 7]),
@@ -263,7 +204,6 @@ impl AudioConfig {
                     "color_mode"     => cfg.color_mode = val.to_string(),
                     "dazzle_palette" => cfg.dazzle_palette = val.to_string(),
                     "layout"         => cfg.layout = val.to_string(),
-                    "freq_set"       => cfg.freq_set = val.to_string(),
                     "sensitivity"    => cfg.sensitivity = val.parse().unwrap_or(cfg.sensitivity),
                     "smoothing"      => cfg.smoothing = val.parse().unwrap_or(cfg.smoothing),
                     "bass_amplify"   => cfg.bass_amplify = val.parse().unwrap_or(cfg.bass_amplify),
@@ -291,27 +231,6 @@ impl AudioConfig {
                     "brilliance" => cfg.band_smoothing.values[6] = val.parse().unwrap_or(0.3),
                     "air"        => cfg.band_smoothing.values[7] = val.parse().unwrap_or(0.3),
                     _ => {}
-                },
-                "freq_sets" => {
-                    // Parse: name = [low, high, weight, low, high, weight, ...] (24 values)
-                    let stripped = val.trim_matches(|c| c == '[' || c == ']');
-                    let parsed: Vec<f32> = stripped.split(',')
-                        .filter_map(|s| s.trim().parse().ok())
-                        .collect();
-                    if parsed.len() == NUM_BANDS * 3 {
-                        let mut bands = [(0.0f32, 0.0f32, 0.0f32); NUM_BANDS];
-                        for i in 0..NUM_BANDS {
-                            bands[i] = (parsed[i*3], parsed[i*3+1], parsed[i*3+2]);
-                        }
-                        if let Some(existing) = cfg.freq_sets.iter_mut().find(|s| s.name == key) {
-                            existing.bands = bands;
-                        } else {
-                            cfg.freq_sets.push(FrequencySet { name: key.to_string(), bands });
-                        }
-                    } else {
-                        eprintln!("Warning: freq_set '{}' needs {} values (low,high,weight per band), got {}",
-                            key, NUM_BANDS * 3, parsed.len());
-                    }
                 },
                 "layouts" => {
                     let stripped = val.trim_matches(|c| c == '[' || c == ']');
@@ -343,12 +262,6 @@ impl AudioConfig {
         cfg
     }
 
-    /// Get the active frequency set
-    pub fn active_freq_set(&self) -> &FrequencySet {
-        self.freq_sets.iter()
-            .find(|s| s.name == self.freq_set)
-            .unwrap_or(&self.freq_sets[0])
-    }
     /// Get the active column layout
     pub fn active_layout(&self) -> &[usize; COLS] {
         self.layouts.iter()
@@ -441,13 +354,9 @@ impl AudioCapture {
         let smoothing = config.smoothing;
         let band_sens = config.band_sensitivity.clone();
         let band_smooth = config.band_smoothing.clone();
-        let freq_set = config.active_freq_set().clone();
 
         thread::spawn(move || {
             let mut smoothed = [0.0f32; NUM_BANDS];
-
-            let mut global_ref = 0.01f32;
-            let mut band_ref = [0.01f32; NUM_BANDS];
             // Use shorter interval for faster response
             let interval = Duration::from_millis(8);
 
@@ -468,14 +377,7 @@ impl AudioCapture {
                     }
                 };
 
-                let raw = analyze_spectrum(
-                    &samples,
-                    sr,
-                    &band_sens,
-                    &freq_set,
-                    &mut global_ref,
-                    &mut band_ref,
-                );
+                let raw = analyze_spectrum(&samples, sr, &band_sens);
 
                 // Per-band asymmetric smoothing: attack fast, decay at per-band rate
                 for i in 0..NUM_BANDS {
@@ -507,8 +409,7 @@ impl AudioCapture {
 
 // ─── Spectrum Analysis ────────────────────────────────────────────────────────
 
-fn analyze_spectrum(samples: &[f32], sample_rate: u32, band_sens: &BandSensitivity, freq_set: &FrequencySet,
-    global_ref: &mut f32, band_ref: &mut [f32; NUM_BANDS],) -> [f32; NUM_BANDS] {
+fn analyze_spectrum(samples: &[f32], sample_rate: u32, band_sens: &BandSensitivity) -> [f32; NUM_BANDS] {
     let mut bands = [0.0f32; NUM_BANDS];
 
     if samples.len() < FFT_SIZE { return bands; }
@@ -525,7 +426,16 @@ fn analyze_spectrum(samples: &[f32], sample_rate: u32, band_sens: &BandSensitivi
         Err(_) => return bands,
     };
 
-    let band_ranges = &freq_set.bands;
+    let band_ranges: [(f32, f32, f32); NUM_BANDS] = [
+        (20.0,    100.0,   2.5),
+        (60.0,    150.0,   1.5),
+        (150.0,   400.0,   1.2),
+        (400.0,   1000.0,  1.0),
+        (1000.0,  2500.0,  1.0),
+        (2500.0,  6000.0,  1.2),
+        (6000.0,  12000.0, 1.5),
+        (12000.0, 20000.0, 2.0),
+    ];
 
     let mut counts = [0u32; NUM_BANDS];
     for (freq, magnitude) in spectrum.data().iter() {
@@ -562,30 +472,13 @@ fn analyze_spectrum(samples: &[f32], sample_rate: u32, band_sens: &BandSensitivi
         eprintln!("[SPEC] max={:.4} raw={:.3?}", max_band, raw_vals);
     }
 
-    // Slowly decaying global reference
-    *global_ref = (*global_ref).max(max_band);
-    *global_ref *= 0.998;
-
-    let global_reference = (*global_ref).max(0.001);
-
+    // Normalize against global max so bands are relative to each other
+    // This preserves dynamics - when bass drops, bars drop too
+    let global_ref = max_band.max(0.001);
     for i in 0..NUM_BANDS {
-        // Slowly decaying per-band reference
-        band_ref[i] = band_ref[i].max(raw_vals[i]);
-        band_ref[i] *= 0.999;
-
-        let local_reference = band_ref[i].max(0.001);
-
-        let global_norm =
-            (raw_vals[i] / global_reference).min(1.0);
-
-        let local_norm =
-            (raw_vals[i] / local_reference).min(1.0);
-
-        let hybrid =
-            global_norm * 0.4 +
-            local_norm * 0.6;
-
-        bands[i] = hybrid.powf(0.6);
+        let normalized = (raw_vals[i] / global_ref).min(1.0);
+        // Gentle power curve to make quiet parts more visible
+        bands[i] = normalized.powf(0.7);
     }
 
     bands

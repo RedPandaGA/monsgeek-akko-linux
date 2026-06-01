@@ -58,6 +58,7 @@ log = "0.4"
 
 # Audio reactive mode
 cpal = { version = "0.15", features = ["jack"] }
+dirs = "5"
 spectrum-analyzer = "1.4"
 
 # Screen color reactive mode (PipeWire screencast)
