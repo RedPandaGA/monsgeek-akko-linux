@@ -165,6 +165,11 @@ pub struct AudioConfig {
     pub layout: String,
     /// Named column layouts
     pub layouts: Vec<(String, [usize; COLS])>,
+    pub global_mix: f32,
+    pub local_mix: f32,
+    pub global_decay: f32,
+    pub band_decay: f32,
+    pub response_curve: f32,
 }
 
 impl Default for AudioConfig {
@@ -220,6 +225,11 @@ impl Default for AudioConfig {
                 ("symmetric".to_string(), [0, 1, 2, 3, 4, 5, 6, 7, 7, 6, 5, 4, 3, 2, 1, 0]),
                 ("treble".to_string(),    [3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 6, 7, 7, 7, 7, 7]),
             ],
+            global_mix: 0.4,
+            local_mix: 0.6,
+            global_decay: 0.998,
+            band_decay: 0.999,
+            response_curve: 0.6,
         }
     }
 }
@@ -268,6 +278,11 @@ impl AudioConfig {
                     "smoothing"      => cfg.smoothing = val.parse().unwrap_or(cfg.smoothing),
                     "bass_amplify"   => cfg.bass_amplify = val.parse().unwrap_or(cfg.bass_amplify),
                     "fps"            => cfg.fps = val.parse().unwrap_or(cfg.fps),
+                    "global_mix"    => cfg.global_mix = val.parse().unwrap_or(cfg.global_mix),
+                    "local_mix"     => cfg.local_mix = val.parse().unwrap_or(cfg.local_mix),
+                    "global_decay"  => cfg.global_decay = val.parse().unwrap_or(cfg.global_decay),
+                    "band_decay"    => cfg.band_decay = val.parse().unwrap_or(cfg.band_decay),
+                    "response_curve"=> cfg.response_curve = val.parse().unwrap_or(cfg.response_curve),
                     _ => {}
                 },
                 "band_sensitivity" => match key {
@@ -442,6 +457,11 @@ impl AudioCapture {
         let band_sens = config.band_sensitivity.clone();
         let band_smooth = config.band_smoothing.clone();
         let freq_set = config.active_freq_set().clone();
+        let global_mix = config.global_mix;
+        let local_mix = config.local_mix;
+        let global_decay = config.global_decay;
+        let band_decay = config.band_decay;
+        let response_curve = config.response_curve;
 
         thread::spawn(move || {
             let mut smoothed = [0.0f32; NUM_BANDS];
@@ -475,6 +495,11 @@ impl AudioCapture {
                     &freq_set,
                     &mut global_ref,
                     &mut band_ref,
+                    global_mix,
+                    local_mix,
+                    global_decay,
+                    band_decay,
+                    response_curve,
                 );
 
                 // Per-band asymmetric smoothing: attack fast, decay at per-band rate
@@ -507,8 +532,19 @@ impl AudioCapture {
 
 // ─── Spectrum Analysis ────────────────────────────────────────────────────────
 
-fn analyze_spectrum(samples: &[f32], sample_rate: u32, band_sens: &BandSensitivity, freq_set: &FrequencySet,
-    global_ref: &mut f32, band_ref: &mut [f32; NUM_BANDS],) -> [f32; NUM_BANDS] {
+fn analyze_spectrum(
+        samples: &[f32],
+        sample_rate: u32,
+        band_sens: &BandSensitivity,
+        freq_set: &FrequencySet,
+        global_ref: &mut f32,
+        band_ref: &mut [f32; NUM_BANDS],
+        global_mix: f32,
+        local_mix: f32,
+        global_decay: f32,
+        band_decay: f32,
+        response_curve: f32,
+    ) -> [f32; NUM_BANDS] {
     let mut bands = [0.0f32; NUM_BANDS];
 
     if samples.len() < FFT_SIZE { return bands; }
@@ -564,14 +600,14 @@ fn analyze_spectrum(samples: &[f32], sample_rate: u32, band_sens: &BandSensitivi
 
     // Slowly decaying global reference
     *global_ref = (*global_ref).max(max_band);
-    *global_ref *= 0.998;
+    *global_ref *= global_decay;
 
     let global_reference = (*global_ref).max(0.001);
 
     for i in 0..NUM_BANDS {
         // Slowly decaying per-band reference
         band_ref[i] = band_ref[i].max(raw_vals[i]);
-        band_ref[i] *= 0.999;
+        band_ref[i] *= band_decay;
 
         let local_reference = band_ref[i].max(0.001);
 
@@ -582,10 +618,10 @@ fn analyze_spectrum(samples: &[f32], sample_rate: u32, band_sens: &BandSensitivi
             (raw_vals[i] / local_reference).min(1.0);
 
         let hybrid =
-            global_norm * 0.4 +
-            local_norm * 0.6;
+            global_norm * global_mix +
+            local_norm * local_mix;
 
-        bands[i] = hybrid.powf(0.6);
+        bands[i] = hybrid.powf(response_curve);
     }
 
     bands
