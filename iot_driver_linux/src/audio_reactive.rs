@@ -606,8 +606,11 @@ fn analyze_spectrum(
 
     for i in 0..NUM_BANDS {
         // Slowly decaying per-band reference
-        band_ref[i] = band_ref[i].max(raw_vals[i]);
-        band_ref[i] *= band_decay;
+        if raw_vals[i] > band_ref[i] {
+            band_ref[i] = raw_vals[i];
+        } else {
+            band_ref[i] *= band_decay;
+        }
 
         let local_reference = band_ref[i].max(0.001);
 
@@ -697,7 +700,11 @@ fn bands_to_frame(
                 "gradient" => {
                     let hue = (config.base_hue + COL_HUE[col]) % 360.0;
                     let tip = from_bottom as f32 / lit_rows.max(1) as f32;
-                    let brightness = 0.55 + 0.45 * (1.0 - tip);
+                    let bar_brightness = 0.25 + raw * 0.75;
+
+                    let brightness =
+                        (0.55 + 0.45 * (1.0 - tip))
+                        * bar_brightness;
                     hsv_to_rgb(hue, 1.0, brightness.min(1.0))
                 }
                 "dazzle" => {
