@@ -345,6 +345,31 @@ impl AudioConfig {
                         eprintln!("Warning: layout '{}' needs 16 entries, got {}", key, parsed.len());
                     }
                 },
+                "palettes" => {
+                    // Parse: name = [[r,g,b],[r,g,b],...]
+                    // Strip outer brackets and split by ],[
+                    let stripped = val.trim().trim_matches(|c| c == '[' || c == ']');
+                    let mut colors: Vec<(u8, u8, u8)> = Vec::new();
+                    // Split on "]," or "], " to get individual [r,g,b] entries
+                    for entry in stripped.split(']') {
+                        let entry = entry.trim().trim_matches(|c| c == '[' || c == ',');
+                        let nums: Vec<u8> = entry.split(',')
+                            .filter_map(|s| s.trim().parse().ok())
+                            .collect();
+                        if nums.len() == 3 {
+                            colors.push((nums[0], nums[1], nums[2]));
+                        }
+                    }
+                    if !colors.is_empty() {
+                        if let Some(existing) = cfg.palettes.iter_mut().find(|p| p.name == key) {
+                            existing.colors = colors;
+                        } else {
+                            cfg.palettes.push(DazzlePalette { name: key.to_string(), colors });
+                        }
+                    } else {
+                        eprintln!("Warning: palette '{}' has no valid colors", key);
+                    }
+                },
                 _ => {}
             }
         }
