@@ -159,8 +159,8 @@ pub struct AudioConfig {
     pub global_decay: f32,
     pub band_decay: f32,
     pub response_curve: f32,
-    /// How many frames each band holds its color in dazzleband mode
-    pub dazzle_band_frames: u32,
+    /// How many frames each LED/band holds its color in dazzle and dazzleband modes
+    pub dazzle_frames: u32,
 }
 
 impl Default for AudioConfig {
@@ -215,7 +215,7 @@ impl Default for AudioConfig {
             global_decay: 0.998,
             band_decay: 0.999,
             response_curve: 0.6,
-            dazzle_band_frames: 8,
+            dazzle_frames: 8,
         }
     }
 }
@@ -269,7 +269,7 @@ impl AudioConfig {
                     "global_decay"       => cfg.global_decay = val.parse().unwrap_or(cfg.global_decay),
                     "band_decay"         => cfg.band_decay = val.parse().unwrap_or(cfg.band_decay),
                     "response_curve"     => cfg.response_curve = val.parse().unwrap_or(cfg.response_curve),
-                    "dazzle_band_frames" => cfg.dazzle_band_frames = val.parse().unwrap_or(cfg.dazzle_band_frames),
+                    "dazzle_frames"      => cfg.dazzle_frames = val.parse().unwrap_or(cfg.dazzle_frames),
                     _ => {}
                 },
                 "band_sensitivity" => match key {
@@ -681,7 +681,7 @@ fn bands_to_frame(
     let band_colors: [Option<(u8, u8, u8)>; NUM_BANDS] = {
         let mut bc = [None; NUM_BANDS];
         if config.color_mode == "dazzleband" {
-            let interval = config.dazzle_band_frames.max(1);
+            let interval = config.dazzle_frames.max(1);
             let slot = frame_counter / interval;
             for i in 0..NUM_BANDS {
                 let stored_slot = (band_color_seeds[i] >> 32) as u32;
@@ -725,14 +725,18 @@ fn bands_to_frame(
                     hsv_to_rgb(hue, 1.0, brightness.min(1.0))
                 }
                 "dazzle" => {
-                    // Each individual LED slot gets a random palette color,
-                    // re-randomized when the top of the bar changes
-                    if from_bottom == lit_rows.saturating_sub(1) {
-                        let mut rng = SlotRng::new(dazzle_seeds[col][row] ^ (raw.to_bits() as u64));
-                        dazzle_seeds[col][row] = rng.next();
+                    // Each individual LED slot gets a random palette color.
+                    // Re-randomizes every dazzle_frames frames (or when bar top changes).
+                    let interval = config.dazzle_frames.max(1);
+                    let slot = frame_counter / interval;
+                    // Re-roll when slot changes or bar top changes
+                    let seed_slot = (dazzle_seeds[col][row] >> 32) as u32;
+                    if slot != seed_slot {
+                        let mut rng = SlotRng::new(dazzle_seeds[col][row] ^ (raw.to_bits() as u64) ^ slot as u64);
+                        let pick = rng.next_usize(palette.len());
+                        dazzle_seeds[col][row] = ((slot as u64) << 32) | (pick as u64);
                     }
-                    let mut rng = SlotRng::new(dazzle_seeds[col][row]);
-                    let pick = rng.next_usize(palette.len());
+                    let pick = (dazzle_seeds[col][row] & 0xFFFFFFFF) as usize;
                     palette.pick(pick)
                 }
                 "dazzleband" => {
@@ -770,7 +774,9 @@ pub fn run_audio_reactive(
     let mut dazzle_seeds = [[0u64; ROWS]; COLS];
     for col in 0..COLS {
         for row in 0..ROWS {
-            dazzle_seeds[col][row] = (col * 100 + row) as u64;
+            // High 32 bits = last slot (0xFFFFFFFF = impossible, forces pick on first frame)
+            // Low 32 bits = color index
+            dazzle_seeds[col][row] = 0xFFFFFFFF_00000000u64 | ((col * ROWS + row) as u64);
         }
     }
 
