@@ -112,17 +112,6 @@ pub struct DazzlePalette {
 }
 
 impl DazzlePalette {
-    pub fn rainbow() -> Self {
-        Self {
-            name: "rainbow".to_string(),
-            colors: vec![
-                (255, 0, 0), (255, 127, 0), (255, 255, 0),
-                (0, 255, 0), (0, 255, 255), (0, 0, 255),
-                (139, 0, 255), (255, 0, 255),
-            ],
-        }
-    }
-
     pub fn pick(&self, idx: usize) -> (u8, u8, u8) {
         self.colors[idx % self.colors.len()]
     }
@@ -137,7 +126,7 @@ impl DazzlePalette {
 pub struct AudioConfig {
     /// Audio source device name
     pub source: Option<String>,
-    /// Color mode: "spectrum", "dazzle", "solid", "gradient"
+    /// Color mode: "spectrum", "dazzle", "dazzleband", "solid", "gradient"
     pub color_mode: String,
     /// Active dazzle palette name
     pub dazzle_palette: String,
@@ -147,7 +136,7 @@ pub struct AudioConfig {
     pub base_hue: f32,
     /// Global sensitivity multiplier
     pub sensitivity: f32,
-    /// Smoothing factor (0.0 = instant, 0.9 = very smooth)
+    /// Smoothing factor (kept for config compat, per-band smoothing takes precedence)
     pub smoothing: f32,
     /// Bass amplification of other bands (0.0 = off, 1.0 = strong)
     pub bass_amplify: f32,
@@ -170,6 +159,8 @@ pub struct AudioConfig {
     pub global_decay: f32,
     pub band_decay: f32,
     pub response_curve: f32,
+    /// How many frames each band holds its color in dazzleband mode
+    pub dazzle_band_frames: u32,
 }
 
 impl Default for AudioConfig {
@@ -179,33 +170,27 @@ impl Default for AudioConfig {
             color_mode: "spectrum".to_string(),
             dazzle_palette: "rainbow".to_string(),
             palettes: vec![
-                DazzlePalette {
-                    name: "rainbow".to_string(),
-                    colors: vec![
-                        (255,0,0),(255,127,0),(255,255,0),(0,255,0),
-                        (0,255,255),(0,0,255),(139,0,255),(255,0,255),
-                    ],
-                },
-                DazzlePalette {
-                    name: "reddish".to_string(),
-                    colors: vec![(255,0,0),(220,20,20),(255,80,0),(200,0,50),(255,30,30)],
-                },
-                DazzlePalette {
-                    name: "bluish".to_string(),
-                    colors: vec![(0,0,255),(0,100,255),(0,200,255),(0,255,255),(30,30,220)],
-                },
-                DazzlePalette {
-                    name: "purplish".to_string(),
-                    colors: vec![(148,0,211),(180,0,255),(100,0,200),(220,50,255),(75,0,130)],
-                },
-                DazzlePalette {
-                    name: "fire".to_string(),
-                    colors: vec![(255,0,0),(255,60,0),(255,120,0),(255,200,0),(255,255,0)],
-                },
-                DazzlePalette {
-                    name: "redwhiteblue".to_string(),
-                    colors: vec![(255,0,0),(255,255,255),(0,0,255),(200,0,0),(255,255,255),(0,0,200)],
-                },
+                DazzlePalette { name: "rainbow".to_string(),      colors: vec![(255,0,0),(255,127,0),(255,255,0),(0,255,0),(0,255,255),(0,0,255),(139,0,255),(255,0,255)] },
+                DazzlePalette { name: "reddish".to_string(),      colors: vec![(255,0,0),(220,20,20),(255,80,0),(200,0,50),(255,30,30)] },
+                DazzlePalette { name: "bluish".to_string(),       colors: vec![(0,0,255),(0,100,255),(0,200,255),(0,255,255),(30,30,220)] },
+                DazzlePalette { name: "purplish".to_string(),     colors: vec![(148,0,211),(180,0,255),(100,0,200),(220,50,255),(75,0,130)] },
+                DazzlePalette { name: "fire".to_string(),         colors: vec![(255,0,0),(255,60,0),(255,120,0),(255,200,0),(255,255,0)] },
+                DazzlePalette { name: "redwhiteblue".to_string(), colors: vec![(255,0,0),(255,255,255),(0,0,255),(200,0,0),(255,255,255),(0,0,200)] },
+                DazzlePalette { name: "ember".to_string(),        colors: vec![(180,10,0),(220,40,0),(255,80,0),(255,140,0),(255,200,20)] },
+                DazzlePalette { name: "sunset".to_string(),       colors: vec![(255,80,50),(255,30,80),(255,120,0),(255,180,0),(220,80,20)] },
+                DazzlePalette { name: "volcano".to_string(),      colors: vec![(120,0,0),(200,20,0),(255,60,0),(255,160,0),(255,240,180)] },
+                DazzlePalette { name: "arctic".to_string(),       colors: vec![(255,255,255),(180,230,255),(80,180,255),(20,100,220),(0,40,180)] },
+                DazzlePalette { name: "aurora".to_string(),       colors: vec![(0,200,150),(0,230,80),(100,0,200),(180,0,255),(255,255,255)] },
+                DazzlePalette { name: "ocean".to_string(),        colors: vec![(0,20,100),(0,60,200),(0,160,220),(0,210,180),(180,240,240)] },
+                DazzlePalette { name: "neon".to_string(),         colors: vec![(255,0,100),(0,255,60),(0,230,255),(255,230,0),(255,0,200)] },
+                DazzlePalette { name: "candy".to_string(),        colors: vec![(255,100,180),(150,255,180),(200,150,255),(255,240,100),(255,140,120)] },
+                DazzlePalette { name: "toxic".to_string(),        colors: vec![(0,255,60),(180,255,0),(0,255,200),(255,255,0),(200,255,100)] },
+                DazzlePalette { name: "void".to_string(),         colors: vec![(40,0,80),(20,0,120),(80,0,100),(10,0,60),(120,0,180)] },
+                DazzlePalette { name: "blood".to_string(),        colors: vec![(80,0,0),(160,0,0),(220,0,20),(255,20,20),(120,0,10)] },
+                DazzlePalette { name: "midnight".to_string(),     colors: vec![(0,10,60),(0,30,80),(20,0,80),(40,0,100),(0,60,80)] },
+                DazzlePalette { name: "christmas".to_string(),    colors: vec![(220,0,0),(255,30,30),(255,255,255),(0,160,40),(255,200,0)] },
+                DazzlePalette { name: "halloween".to_string(),    colors: vec![(220,80,0),(150,0,180),(255,120,0),(60,180,0),(180,0,120)] },
+                DazzlePalette { name: "synthwave".to_string(),    colors: vec![(255,0,120),(180,0,255),(0,220,255),(120,0,220),(255,60,180)] },
             ],
             base_hue: 0.0,
             sensitivity: 1.0,
@@ -230,6 +215,7 @@ impl Default for AudioConfig {
             global_decay: 0.998,
             band_decay: 0.999,
             response_curve: 0.6,
+            dazzle_band_frames: 8,
         }
     }
 }
@@ -269,20 +255,21 @@ impl AudioConfig {
 
             match section.as_str() {
                 "" => match key {
-                    "source"         => cfg.source = Some(val.to_string()),
-                    "color_mode"     => cfg.color_mode = val.to_string(),
-                    "dazzle_palette" => cfg.dazzle_palette = val.to_string(),
-                    "layout"         => cfg.layout = val.to_string(),
-                    "freq_set"       => cfg.freq_set = val.to_string(),
-                    "sensitivity"    => cfg.sensitivity = val.parse().unwrap_or(cfg.sensitivity),
-                    "smoothing"      => cfg.smoothing = val.parse().unwrap_or(cfg.smoothing),
-                    "bass_amplify"   => cfg.bass_amplify = val.parse().unwrap_or(cfg.bass_amplify),
-                    "fps"            => cfg.fps = val.parse().unwrap_or(cfg.fps),
-                    "global_mix"    => cfg.global_mix = val.parse().unwrap_or(cfg.global_mix),
-                    "local_mix"     => cfg.local_mix = val.parse().unwrap_or(cfg.local_mix),
-                    "global_decay"  => cfg.global_decay = val.parse().unwrap_or(cfg.global_decay),
-                    "band_decay"    => cfg.band_decay = val.parse().unwrap_or(cfg.band_decay),
-                    "response_curve"=> cfg.response_curve = val.parse().unwrap_or(cfg.response_curve),
+                    "source"             => cfg.source = Some(val.to_string()),
+                    "color_mode"         => cfg.color_mode = val.to_string(),
+                    "dazzle_palette"     => cfg.dazzle_palette = val.to_string(),
+                    "layout"             => cfg.layout = val.to_string(),
+                    "freq_set"           => cfg.freq_set = val.to_string(),
+                    "sensitivity"        => cfg.sensitivity = val.parse().unwrap_or(cfg.sensitivity),
+                    "smoothing"          => cfg.smoothing = val.parse().unwrap_or(cfg.smoothing),
+                    "bass_amplify"       => cfg.bass_amplify = val.parse().unwrap_or(cfg.bass_amplify),
+                    "fps"                => cfg.fps = val.parse().unwrap_or(cfg.fps),
+                    "global_mix"         => cfg.global_mix = val.parse().unwrap_or(cfg.global_mix),
+                    "local_mix"          => cfg.local_mix = val.parse().unwrap_or(cfg.local_mix),
+                    "global_decay"       => cfg.global_decay = val.parse().unwrap_or(cfg.global_decay),
+                    "band_decay"         => cfg.band_decay = val.parse().unwrap_or(cfg.band_decay),
+                    "response_curve"     => cfg.response_curve = val.parse().unwrap_or(cfg.response_curve),
+                    "dazzle_band_frames" => cfg.dazzle_band_frames = val.parse().unwrap_or(cfg.dazzle_band_frames),
                     _ => {}
                 },
                 "band_sensitivity" => match key {
@@ -347,10 +334,8 @@ impl AudioConfig {
                 },
                 "palettes" => {
                     // Parse: name = [[r,g,b],[r,g,b],...]
-                    // Strip outer brackets and split by ],[
                     let stripped = val.trim().trim_matches(|c| c == '[' || c == ']');
                     let mut colors: Vec<(u8, u8, u8)> = Vec::new();
-                    // Split on "]," or "], " to get individual [r,g,b] entries
                     for entry in stripped.split(']') {
                         let entry = entry.trim().trim_matches(|c| c == '[' || c == ',');
                         let nums: Vec<u8> = entry.split(',')
@@ -379,7 +364,8 @@ impl AudioConfig {
             cfg.color_mode, cfg.dazzle_palette, cfg.sensitivity,
             cfg.smoothing, cfg.bass_amplify, cfg.fps);
         eprintln!("  band_sens={:?}", cfg.band_sensitivity.values);
-        eprintln!("  layout={} available={:?}", cfg.layout, cfg.layouts.iter().map(|(n,_)| n.as_str()).collect::<Vec<_>>());
+        eprintln!("  layout={} available={:?}", cfg.layout,
+            cfg.layouts.iter().map(|(n,_)| n.as_str()).collect::<Vec<_>>());
         cfg
     }
 
@@ -389,6 +375,7 @@ impl AudioConfig {
             .find(|s| s.name == self.freq_set)
             .unwrap_or(&self.freq_sets[0])
     }
+
     /// Get the active column layout
     pub fn active_layout(&self) -> &[usize; COLS] {
         self.layouts.iter()
@@ -478,7 +465,7 @@ impl AudioCapture {
         state.running.store(true, Ordering::SeqCst);
 
         let state_clone = Arc::clone(&state);
-        let smoothing = config.smoothing;
+        let _smoothing = config.smoothing;
         let band_sens = config.band_sensitivity.clone();
         let band_smooth = config.band_smoothing.clone();
         let freq_set = config.active_freq_set().clone();
@@ -490,10 +477,8 @@ impl AudioCapture {
 
         thread::spawn(move || {
             let mut smoothed = [0.0f32; NUM_BANDS];
-
             let mut global_ref = 0.01f32;
             let mut band_ref = [0.01f32; NUM_BANDS];
-            // Use shorter interval for faster response
             let interval = Duration::from_millis(8);
 
             while state_clone.running.load(Ordering::SeqCst) {
@@ -531,10 +516,8 @@ impl AudioCapture {
                 for i in 0..NUM_BANDS {
                     let s = band_smooth.values[i];
                     if raw[i] > smoothed[i] {
-                        // Fast attack: half the smoothing factor
                         smoothed[i] = smoothed[i] * (s * 0.5) + raw[i] * (1.0 - s * 0.5);
                     } else {
-                        // Decay at per-band rate
                         smoothed[i] = smoothed[i] * s + raw[i] * (1.0 - s);
                     }
                 }
@@ -611,7 +594,6 @@ fn analyze_spectrum(
 
     if max_band < 0.0005 { return [0.0; NUM_BANDS]; }
 
-    // Compute raw per-band values
     let mut raw_vals = [0.0f32; NUM_BANDS];
     for i in 0..NUM_BANDS {
         if counts[i] > 0 {
@@ -623,32 +605,20 @@ fn analyze_spectrum(
         eprintln!("[SPEC] max={:.4} raw={:.3?}", max_band, raw_vals);
     }
 
-    // Slowly decaying global reference
     *global_ref = (*global_ref).max(max_band);
     *global_ref *= global_decay;
-
     let global_reference = (*global_ref).max(0.001);
 
     for i in 0..NUM_BANDS {
-        // Slowly decaying per-band reference
         if raw_vals[i] > band_ref[i] {
             band_ref[i] = raw_vals[i];
         } else {
             band_ref[i] *= band_decay;
         }
-
         let local_reference = band_ref[i].max(0.001);
-
-        let global_norm =
-            (raw_vals[i] / global_reference).min(1.0);
-
-        let local_norm =
-            (raw_vals[i] / local_reference).min(1.0);
-
-        let hybrid =
-            global_norm * global_mix +
-            local_norm * local_mix;
-
+        let global_norm = (raw_vals[i] / global_reference).min(1.0);
+        let local_norm  = (raw_vals[i] / local_reference).min(1.0);
+        let hybrid = global_norm * global_mix + local_norm * local_mix;
         bands[i] = hybrid.powf(response_curve);
     }
 
@@ -676,7 +646,7 @@ const COL_HUE: [f32; COLS] = [
     300.0,
 ];
 
-/// Simple LCG for deterministic-ish pseudo-random color picking per LED slot
+/// Simple LCG pseudo-random number generator
 struct SlotRng {
     state: u64,
 }
@@ -696,20 +666,45 @@ fn bands_to_frame(
     bands: &[f32; NUM_BANDS],
     config: &AudioConfig,
     dazzle_seeds: &mut [[u64; ROWS]; COLS],
+    band_color_seeds: &mut [u64; NUM_BANDS],
+    frame_counter: u32,
 ) -> [(u8, u8, u8); MATRIX_LEN] {
     let mut leds = [(0u8, 0u8, 0u8); MATRIX_LEN];
 
-    // Bass amplification: boost all bands proportionally to bass energy
     let bass_energy = ((bands[0] + bands[1]) / 2.0).min(1.0);
     let amplify = 1.0 + config.bass_amplify * bass_energy;
 
     let palette = config.active_palette();
+    let layout = config.active_layout();
+
+    // Pre-compute per-band colors for dazzleband mode
+    let band_colors: [Option<(u8, u8, u8)>; NUM_BANDS] = {
+        let mut bc = [None; NUM_BANDS];
+        if config.color_mode == "dazzleband" {
+            let interval = config.dazzle_band_frames.max(1);
+            let slot = frame_counter / interval;
+            for i in 0..NUM_BANDS {
+                let stored_slot = (band_color_seeds[i] >> 32) as u32;
+                if slot != stored_slot {
+                    // New slot: pick a new random color for this band
+                    let mut rng = SlotRng::new(
+                        band_color_seeds[i] ^ slot as u64 ^ (i as u64).wrapping_mul(0x9e3779b97f4a7c15)
+                    );
+                    let pick = rng.next_usize(palette.len());
+                    // Store slot in high 32 bits, color index in low 32 bits
+                    band_color_seeds[i] = ((slot as u64) << 32) | (pick as u64);
+                }
+                let pick = (band_color_seeds[i] & 0xFFFFFFFF) as usize;
+                bc[i] = Some(palette.pick(pick));
+            }
+        }
+        bc
+    };
 
     for col in 0..COLS {
-        let band_idx = config.active_layout()[col].min(NUM_BANDS - 1);
+        let band_idx = layout[col].min(NUM_BANDS - 1);
         let raw = (bands[band_idx] * config.sensitivity * amplify).min(1.0);
 
-        // How many rows light up from the bottom
         let lit_rows = (raw * ROWS as f32).round() as usize;
 
         for row in 0..ROWS {
@@ -726,17 +721,13 @@ fn bands_to_frame(
                     let hue = (config.base_hue + COL_HUE[col]) % 360.0;
                     let tip = from_bottom as f32 / lit_rows.max(1) as f32;
                     let bar_brightness = 0.25 + raw * 0.75;
-
-                    let brightness =
-                        (0.55 + 0.45 * (1.0 - tip))
-                        * bar_brightness;
+                    let brightness = (0.55 + 0.45 * (1.0 - tip)) * bar_brightness;
                     hsv_to_rgb(hue, 1.0, brightness.min(1.0))
                 }
                 "dazzle" => {
-                    // Each LED slot gets a stable random color from palette
-                    // Seed changes each time the row first lights up
+                    // Each individual LED slot gets a random palette color,
+                    // re-randomized when the top of the bar changes
                     if from_bottom == lit_rows.saturating_sub(1) {
-                        // Top of bar just turned on — assign new random color
                         let mut rng = SlotRng::new(dazzle_seeds[col][row] ^ (raw.to_bits() as u64));
                         dazzle_seeds[col][row] = rng.next();
                     }
@@ -744,8 +735,13 @@ fn bands_to_frame(
                     let pick = rng.next_usize(palette.len());
                     palette.pick(pick)
                 }
+                "dazzleband" => {
+                    // All columns sharing the same band get the same color.
+                    // Color changes every dazzle_band_frames frames.
+                    band_colors[band_idx].unwrap_or((255, 255, 255))
+                }
                 _ => {
-                    // "spectrum" - rainbow gradient, brighter at bottom
+                    // "spectrum" — rainbow gradient, brighter at bottom
                     let hue = COL_HUE[col];
                     let tip = from_bottom as f32 / lit_rows.max(1) as f32;
                     let brightness = 0.55 + 0.45 * (1.0 - tip);
@@ -770,13 +766,23 @@ pub fn run_audio_reactive(
     println!("Audio capture started.");
 
     let frame_duration = Duration::from_millis(1000 / config.fps as u64);
+
     let mut dazzle_seeds = [[0u64; ROWS]; COLS];
-    // Initialize seeds
     for col in 0..COLS {
         for row in 0..ROWS {
             dazzle_seeds[col][row] = (col * 100 + row) as u64;
         }
     }
+
+    // Per-band color seeds for dazzleband mode
+    // High 32 bits = last frame slot, low 32 bits = palette color index
+    let mut band_color_seeds = [0u64; NUM_BANDS];
+    for i in 0..NUM_BANDS {
+        // Init with impossible slot (0xFFFFFFFF) so first frame always picks a color
+        band_color_seeds[i] = 0xFFFFFFFF_00000000u64 | (i as u64);
+    }
+
+    let mut frame_counter: u32 = 0;
 
     running.store(true, Ordering::SeqCst);
 
@@ -784,9 +790,17 @@ pub fn run_audio_reactive(
         let frame_start = Instant::now();
 
         let bands = capture.get_bands();
-        let leds = bands_to_frame(&bands, &config, &mut dazzle_seeds);
+        let leds = bands_to_frame(
+            &bands,
+            &config,
+            &mut dazzle_seeds,
+            &mut band_color_seeds,
+            frame_counter,
+        );
 
         let _ = send_full_frame(keyboard, &leds);
+
+        frame_counter = frame_counter.wrapping_add(1);
 
         let elapsed = frame_start.elapsed();
         if elapsed < frame_duration {
